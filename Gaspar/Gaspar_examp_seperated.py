@@ -1,0 +1,432 @@
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.animation import FuncAnimation
+from scipy.optimize import curve_fit
+# import pyicon as pyic
+# from netCDF4 import Dataset
+# import sys
+# import xarray as xr
+
+import pyvmix_seperated as pyvmix
+
+
+# Initialize settings
+# -------------------
+S = pyvmix.Model()
+
+# Modify default settings
+# -----------------------
+S.run = __file__.split('/')[-1][:-3]
+S.path_data = f'/Users/nbruegge/work/pyvmix/{S.run}/'
+
+S.savefig = False
+S.path_fig = '../pics_nac/'
+S.nnf=0
+
+S.nz = 10
+S.dz = 400*np.ones(S.nz) #4000 m in total
+
+#S.fcor = 2*np.pi/86400 * np.sin(np.pi/180. * 45)
+S.fcor = 0
+S.conv_adj = True #toegevoegd: om convective adjustment aan te zetten
+
+S.c_k = 0.1
+
+S.kvAv = 'tke'
+
+# S.deltaT = 100.
+# S.nt = 24000*3600//S.deltaT
+# S.lsave = 3600//S.deltaT
+
+S.deltaT = 50*3600*24
+S.nt = 1500000*365*24*3600//S.deltaT
+S.lsave = 50*3600*24//S.deltaT
+
+S.gamma = -0.0
+S.fwf = S.gamma * (5/7.6) / (3600*24*365*5) # 25/38, then gamma should be similar to Den Toom; made per time step by scaling by delta T / 5 years.
+#S.fwf = S.gamma * 5 * (25/38) / (3600*24*365*5) # 25/38, then gamma should be similar to Den Toom; made per time step by scaling by delta T / 5 years.
+
+# Initialize grid and variables
+# -----------------------------
+S.initialize()
+
+# Modify initial conditions
+# -------------------------
+#S.b = 5e-3*np.exp(S.zt/200.)
+#S.b = 0.*S.zt
+dTdz = 0.5
+T_init = 20. + dTdz*S.zt
+# plt.plot(T_init, S.zt)
+# plt.show()
+
+# rho_init = S.rho0*(1 - S.alpha*(T_init - S.T0))
+# S.b = -S.grav*(rho_init - S.rho0)/S.rho0
+
+##INITIAL CONDITIONS USING BOUYANCY
+#S.b = S.grav*S.tAlpha*(T_init - S.T0)
+#S.b = 0.*T_init
+
+#S.b = 1e-4*S.zt/100.
+
+# Modify forcing
+# --------------
+# wind forcing
+#S.taux0 = 1.5e-4
+#Tsurf = -1e-4
+Tsurf = 0.
+S.Qsurf0 =  S.rho0 * S.cp * S.dz[0]* Tsurf  # W/m2
+
+# S.uair = 3.
+# S.vair = 0.
+
+#RELAXATION TOWARDS A PROFILE: IMPORTANT FOR LATERAL FORCING
+print(S.zt)
+T_relax = 15 - 5*np.cos(2*np.pi*S.zt/(S.nz*S.dz[1]))
+#plt.plot(T_relax, S.zt) #klopt
+# plt.plot(T_relax, S.zt)
+
+S.temp0 = T_relax
+S.lam_T = 1./(3600*24*365*5)
+
+S.S_forcing = S.fwf*np.cos(np.pi*S.zt/(S.nz*S.dz[1]))
+# plt.plot(S.S_forcing, S.zt)
+# plt.show()
+
+S.sal0 = S.S_forcing
+
+
+
+S.temp = T_relax
+
+S_init = 35.0 * np.ones(S.nz)
+S.sal = S_init
+
+#S.ylim_hov = [-25, 0]
+
+# def wind_forcing(S, time):
+#   #taux = S.taux0
+#   #tauy = 0.
+#   usurf = S.uvel[0]
+#   vsurf = S.vvel[0]
+#   taux = (
+#     S.rho_air * S.cdrag / S.rho0
+#     * np.sqrt((S.uair-usurf)**2+(S.vair-vsurf)**2)
+#     * (S.uair-usurf)
+#     )
+#   tauy = (
+#     S.rho_air * S.cdrag / S.rho0
+#     * np.sqrt((S.uair-usurf)**2+(S.vair-vsurf)**2)
+#     * (S.vair-vsurf)
+#     )
+#   return taux, tauy
+# S.wind_forcing = wind_forcing
+
+def no_wind(S, time):
+    # return zero wind stress
+    return 0.0, 0.0
+
+S.wind_forcing = no_wind
+
+def buoyancy_forcing(S, time):
+  Qsurf = S.Qsurf0
+#   Qsurf = S.Qsurf0*np.sin(2*np.pi*time/86400.)
+#   Qcut = -300
+#   if Qsurf<Qcut:
+#     Qsurf = Qcut
+  return Qsurf
+S.buoyancy_forcing = buoyancy_forcing
+
+
+#find equilibrium
+S.find_equilibrium = True
+S.eq_tol = 1e-6
+
+
+# Run the model
+# -------------
+
+
+#S.run_model()
+
+
+
+#### TO MAKE BIFURCATION DIAGRAM ################################################
+#################################################################################
+
+#reload previous data to start from there
+data = np.load("Gaspar/nz10nleos/bifurcation_equilibria_data_part3.npz")
+
+S.gamma = data["gamma"][-1]
+S.temp  = data["temp"][-1,:]
+S.sal   = data["sal"][-1,:]
+S.measure_convection = data["convection"][-1]
+
+
+number_of_steps = 30
+dgamma = -0.01
+gamma_values = []
+convection_measures = []
+gamma_values.append(S.gamma)
+convection_measures.append(S.measure_convection)
+temp_eq = []
+sal_eq = []
+
+for i in range(number_of_steps):
+    print(f'Running step {i+1} of {number_of_steps}')
+    S.found_solution = False
+    S.gamma = S.gamma + dgamma
+    gamma_values.append(S.gamma)
+    S.fwf = S.gamma * (5/7.6) / (3600*24*365*5) # 25/38, then gamma should be similar to Den Toom; made per time step by scaling by delta T / 5 years.
+    S.S_forcing = S.fwf*np.cos(np.pi*S.zt/(S.nz*S.dz[1]))
+    S.sal0 = S.S_forcing
+    S.run_model()
+    convection_measures.append(S.measure_convection)
+    print("hi")
+    temp_eq.append(S.temp.copy())   # copy is important!
+    sal_eq.append(S.sal.copy())
+
+    if S.found_solution == False:
+        print(f'No solution found for gamma = {S.gamma}')
+        break
+    
+    print("hello, plotting")
+    plt.figure()
+    plt.plot(1.6*(S.temp - 15)/5, S.zt/4000, label='T equilibrium')
+    plt.plot((S.sal-35)*7.6/5, S.zt/4000, label='S equilibrium')
+    rho = S.rho0 * (1 - S.b/S.grav)
+    plt.plot((rho - S.rho0)/S.rho0, S.zt/4000, label='rho equilibrium')
+    plt.xlabel("Value at equilibrium")
+    plt.ylabel("Depth")
+    plt.title(f"Equilibrium profiles, gamma = {round(S.gamma, 2)}")
+    plt.ylim(-1,0)
+    #plt.xlim(-max(abs(S.sal-35)*7.6/5),max(abs(S.sal-35)*7.6/5))
+    plt.legend()
+    plt.savefig(f"Gaspar/nz10nleos/Gaspar_equilibrium_profiles_gamma{round(S.gamma, 2)}.png")
+    print("plotted")
+
+plt.figure()
+plt.plot(gamma_values, convection_measures)
+plt.savefig('Gaspar/nz10nleos/bif_Gaspar_part5.png', dpi=200)
+
+np.savez(
+    "Gaspar/nz10nleos/bifurcation_equilibria_data_part5.npz",
+    gamma=np.array(gamma_values),
+    temp=np.array(temp_eq),
+    sal=np.array(sal_eq),
+    convection=np.array(convection_measures),
+    zt=S.zt
+)
+
+################################################################################
+################################################################################
+
+# print(S.gamma, S.measure_convection)
+# S.gamma = -0.00000001
+# S.fwf = S.gamma * (25/38) * S.deltaT / (3600*24*365*5) # 25/38, then gamma should be similar to Den Toom; made per time step by scaling by delta T / 5 years.
+# S.S_forcing = S.fwf*np.cos(np.pi*S.zt/(S.zt[-1]-S.zt[0]))
+# S.sal0 = S.S_forcing
+# S.run_model()
+# print(S.gamma, S.measure_convection)
+
+
+# WHEN ON MAC I CAN PROBABLY USE THIS TO PLOT DIRECTLY
+# # Visualize results
+# # -----------------
+# plt.close('all')
+
+# exec(open('./extract_parameters/plot_defaults.py').read())
+
+# plt.show()
+
+#PLOT FOR NOW
+
+# print(dir(S))
+
+# # print(S.kv_s[20])
+# # print(S.b)
+
+#Time corresponding to snapshots (assuming each snapshot = deltaT * lsave)
+time_save = (np.arange(S.b_s.shape[0]) * S.deltaT * S.lsave / 3600) + (S.deltaT * S.lsave /3600)  # in hours #one step shifted, ic not saved
+time_sec = time_save * 3600
+
+T_s = S.temp_s
+S_s = S.sal_s
+#S.T0 + S.b_s/(S.grav*S.tAlpha)  #buoyancy to temperature
+
+# #temperature to temperature as in Den Toom
+# Tref_DT = 15
+# Sref_DT = 35
+
+# T_sDT = (T_s - Tref_DT) / 5 
+# T_sG = (T_s - S.T0) / 5
+# S_sDT = (S_s - Sref_DT) * 7.6 / 5
+# rho_sDT = -T_sDT + S_sDT #rho DT
+# rho_sG = -2*T_sG + S_sDT #rho Gaspar, because alpha_T is 2*
+
+
+# plt.plot(time_save, S_s[:,0])
+# print(S_s[-1,0])
+# idx = np.where(S_s[:,5] >= 15)[0][0]
+# time_at_15 = time_save[idx]
+
+# print("time at time_at_15 =", time_at_15)
+
+
+
+# plt.xlabel = "Time (h)"
+# plt.ylabel = "Temperature at mid-depth [°C]"
+# plt.title("Temperature relaxation at mid-depth")
+# plt.savefig("extract_parameters/Gaspar_temperaturerelaxation_middepth.png")
+# plt.xlabel = "Time (h)"
+# plt.ylabel = "Salinity at top [psu]"
+# plt.title("Salinity flux at top")
+# plt.savefig("extract_parameters/Gaspar_salinityflux_top.png")
+
+#T_s = S.b_s  #directly temperature
+
+# # Fit surface temperature cooling rate
+# def m_sst(x, a):
+#     return 20.0 - a * np.sqrt(x)
+# popt, pcov = curve_fit(m_sst, time_sec, T_s[:,0], p0=[0.01], bounds=(0, np.inf))
+# a_sst = popt[0]
+# sst_fit = m_sst(time_sec, a_sst)
+
+# # Plot surface temperature over time
+# plt.plot(time_save, T_s[:, 0])  # surface is the first index
+# plt.plot(time_save, sst_fit, '--', label='fit')
+# plt.xlabel('Time [hours]')
+# plt.ylabel('Surface temperature [°C]')
+# plt.savefig("extract_parameters/Gaspar_sst.png", dpi=200)
+
+# print(f'Fitted cooling rate a_sst = {a_sst:.5f}')
+
+
+
+
+# #MLD calculation
+# MLD = []
+
+# for u in S.b_s:
+#     rho = S.rho0 - u / (S.grav * S.tAlpha)  # convert buoyancy back to density
+#     depth = 0.0
+#     for k in range(S.nz - 1):
+#         if rho[k] < rho[k + 1]:  # density decreases downward. As soon as it increases, MLD is reached
+#             depth = abs(S.zt[k] - S.zt[0])
+#             break
+#     MLD.append(depth)
+
+# MLD = np.array(MLD)
+
+# def m_mld(x, a):
+#     return a* np.sqrt(x)
+
+# popt, pcov = curve_fit(m_mld, time_sec, MLD, p0=[0.01], bounds=(0, np.inf))
+# a_mld = popt[0]
+# mld_fit = m_mld(time_sec, a_mld)
+
+# plt.figure()
+# plt.plot(time_save, MLD, label='MLD data')
+# plt.plot(time_save, mld_fit, ls='--', label='fit')
+# plt.xlabel('Time [hours]')
+# plt.ylabel('Mixed Layer Depth [m]')
+# plt.legend()
+# plt.savefig("extract_parameters/gaspar_mld_fit.png", dpi=200)
+
+# print(f"MLD fit: a1 = {a_mld}")
+
+
+# # Optional: calculate time array for snapshots
+# time_save = np.arange(T_s.shape[0]) * S.deltaT * S.lsave / 3600  # in hours
+
+# # --- Create the figure ---
+# fig, ax = plt.subplots()
+# # line_T_DT, = ax.plot([], [], color='green', label='T DT')
+# # line_S_DT, = ax.plot([], [], color='orange', label='S DT')
+# # line_rho_G, = ax.plot([], [], color='blue', ls='--', label='rho G')
+# # line_rho_DT, = ax.plot([], [], color='blue', label='rho DT')
+# # line_T_G, = ax.plot([], [], color='green', ls='--', label='T G')
+# line_T, = ax.plot([], [], color='purple', label='T')
+# line_S, = ax.plot([], [], color='purple', label='S')
+
+# ax.set_xlim(0, 70)
+# ax.set_ylim(S.zt[-1], S.zt[0])  # surface at top
+# ax.set_xlabel('Salinity [psu]')
+# ax.set_ylabel('Depth [m]')
+
+# def init():
+#     # line_T_DT = ax.plot([], [], color='green', label='T DT')
+#     # line_S_DT = ax.plot([], [], color='orange', label='S DT')
+#     # line_rho_G = ax.plot([], [], color='blue', label='rho G')
+#     # line_rho_DT = ax.plot([], [], color='blue', ls='--', label='rho DT')
+#     # line_T_G = ax.plot([], [], color='green', ls='--', label='T G')
+#     line_T = ax.plot([], [], color='purple', label='T')
+#     line_S = ax.plot([], [], color='purple', label='S')
+#     return (
+#             # line_T_DT, 
+#             # line_S_DT, 
+#             # line_rho_G, 
+#             # line_rho_DT, 
+#             # line_T_G,
+#             line_T,
+#             line_S
+#             )
+
+# def update(frame):
+#     # line_T_DT.set_data(T_sDT[frame], S.zt)
+#     # line_S_DT.set_data(S_sDT[frame], S.zt)
+#     # line_rho_G.set_data(rho_sG[frame], S.zt)
+#     # line_rho_DT.set_data(rho_sDT[frame], S.zt)
+#     # line_T_G.set_data(T_sG[frame], S.zt)
+#     line_T.set_data(T_s[frame], S.zt)
+#     line_S.set_data(S_s[frame], S.zt)
+
+#     ax.set_title(f'Time = {time_save[frame]:.1f} h')
+#     return (
+#         # line_T_DT,
+#         # line_S_DT,
+#         # line_rho_G,
+#         # line_rho_DT,
+#         # line_T_G,
+#         line_T,
+#         line_S
+#     )
+
+# # --- Create animation ---
+# ax.legend(loc='best', frameon=True)
+# anim = FuncAnimation(fig, update, frames=T_s.shape[0],
+#                      init_func=init, blit=False, interval=200)
+
+# anim.save(f'Gapar/Gaspar_findequilibrium_gamma{S.gamma}.gif')
+#plt.show()
+
+####PLOT EQUILIBRIUM PROFILES ##############################
+###############################IN DT STANDARDS##########################
+
+#plot single equilibrium profile to see if there is convergence to equilibrium
+# plt.figure()
+# plt.plot(time_save, S.temp_s[:,-1], label='T equilibrium', color='purple')
+# plt.savefig(f"Gaspar/Gaspar_evolution_bottom_temperature_gamma{S.gamma}.png")
+# plt.figure()
+# plt.plot(time_save, S.sal_s[:,-1], label='S equilibrium', color='blue')
+# plt.savefig(f"Gaspar/Gaspar_evolution_bottom_salinity_gamma{S.gamma}.png")  
+
+# if S.found_solution == False:
+#     print("No equilibrium found, so no equilibrium profiles to plot.")
+#     exit()
+# plt.figure()
+# plt.plot((S.temp - 15)/5, S.zt/4000, label='T equilibrium')
+# plt.plot((S.sal-35)*7.6/5, S.zt/4000, label='S equilibrium')
+# plt.xlabel = "Value at equilibrium"
+# plt.ylabel = "Depth"
+# plt.title(f"Equilibrium profiles, gamma = {S.gamma}")
+# plt.ylim(-1,0)
+# plt.xlim(-max(abs(S.sal)),max(abs(S.sal)))
+# plt.legend()
+# plt.savefig(f"Gaspar/Gaspar_equilibrium_profiles_gamma{S.gamma}.png")
+
+
+# # print('S.nt, S.lsave, nsave, S.time[:5] =', S.nt, S.lsave, S.nsave, getattr(S,'time',None)[:5])
+
+
+
+

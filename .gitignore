@@ -1,3 +1,7 @@
 # pixi environments
 .pixi/*
 !.pixi/config.toml
+
+#ignore data folders
+/data/
+__pycache__/
