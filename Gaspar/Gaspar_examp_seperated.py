@@ -8,6 +8,7 @@ from scipy.optimize import curve_fit
 # import xarray as xr
 
 import pyvmix_seperated as pyvmix
+import gsw
 
 
 # Initialize settings
@@ -28,7 +29,7 @@ S.dz = 400*np.ones(S.nz) #4000 m in total
 
 #S.fcor = 2*np.pi/86400 * np.sin(np.pi/180. * 45)
 S.fcor = 0
-S.conv_adj = True #toegevoegd: om convective adjustment aan te zetten
+S.conv_adj = True #True #toegevoegd: om convective adjustment aan te zetten
 
 S.c_k = 0.1
 
@@ -39,6 +40,7 @@ S.kvAv = 'tke'
 # S.lsave = 3600//S.deltaT
 
 S.deltaT = 50*3600*24
+#S.nt = 15*365*24*3600//S.deltaT
 S.nt = 1500000*365*24*3600//S.deltaT
 S.lsave = 50*3600*24//S.deltaT
 
@@ -146,23 +148,23 @@ S.eq_tol = 1e-6
 # -------------
 
 
-#S.run_model()
+S.run_model()
 
 
 
-#### TO MAKE BIFURCATION DIAGRAM ################################################
-#################################################################################
+### TO MAKE BIFURCATION DIAGRAM ################################################
+################################################################################
 
-#reload previous data to start from there
-data = np.load("Gaspar/nz10nleos/bifurcation_equilibria_data_part3.npz")
+# #reload previous data to start from there
+# data = np.load("data/Gaspar/nz10nleos/bifurcation_equilibria_data_part5.npz")
 
-S.gamma = data["gamma"][-1]
-S.temp  = data["temp"][-1,:]
-S.sal   = data["sal"][-1,:]
-S.measure_convection = data["convection"][-1]
+# S.gamma = data["gamma"][-1]
+# S.temp  = data["temp"][-1,:]
+# S.sal   = data["sal"][-1,:]
+# S.measure_convection = data["convection"][-1]
 
 
-number_of_steps = 30
+number_of_steps = 100
 dgamma = -0.01
 gamma_values = []
 convection_measures = []
@@ -191,25 +193,30 @@ for i in range(number_of_steps):
     
     print("hello, plotting")
     plt.figure()
-    plt.plot(1.6*(S.temp - 15)/5, S.zt/4000, label='T equilibrium')
-    plt.plot((S.sal-35)*7.6/5, S.zt/4000, label='S equilibrium')
+    plt.plot((S.temp - 20)*2e-4, S.zt/4000, label='T equilibrium')
+    plt.plot((S.sal-35)*7.6e-4, S.zt/4000, label='S equilibrium')
     rho = S.rho0 * (1 - S.b/S.grav)
     plt.plot((rho - S.rho0)/S.rho0, S.zt/4000, label='rho equilibrium')
+    # plt.plot(S.b_T*(1+S.g_2*S.pressure)*(S.temp - S.T0nl), S.zt/4000, label='T contribution')
+    # plt.plot(S.b_S*(S.sal - S.S0nl), S.zt/4000, label='S contribution')
+    # plt.plot((S.b_T2/2)*(S.temp - S.T0nl)**2, S.zt/4000, label='T2 contribution')
+    # plt.plot((-S.b_T*(1+S.g_2*S.pressure)*(S.temp - S.T0nl) - (S.b_T2/2)*(S.temp - S.T0nl)**2 + S.b_S*(S.sal - S.S0nl)), S.zt/4000, label='rho nondimensional')
+
     plt.xlabel("Value at equilibrium")
     plt.ylabel("Depth")
     plt.title(f"Equilibrium profiles, gamma = {round(S.gamma, 2)}")
     plt.ylim(-1,0)
     #plt.xlim(-max(abs(S.sal-35)*7.6/5),max(abs(S.sal-35)*7.6/5))
     plt.legend()
-    plt.savefig(f"Gaspar/nz10nleos/Gaspar_equilibrium_profiles_gamma{round(S.gamma, 2)}.png")
+    plt.savefig(f"data/Gaspar/nz10/Gaspar_equilibrium_profiles_gamma{round(S.gamma, 2)}.png")
     print("plotted")
 
 plt.figure()
 plt.plot(gamma_values, convection_measures)
-plt.savefig('Gaspar/nz10nleos/bif_Gaspar_part5.png', dpi=200)
+plt.savefig('data/Gaspar/nz10/bif_Gaspar.png', dpi=200)
 
 np.savez(
-    "Gaspar/nz10nleos/bifurcation_equilibria_data_part5.npz",
+    "data/Gaspar/nz10/bifurcation_equilibria_data.npz",
     gamma=np.array(gamma_values),
     temp=np.array(temp_eq),
     sal=np.array(sal_eq),
@@ -348,7 +355,7 @@ S_s = S.sal_s
 # line_T, = ax.plot([], [], color='purple', label='T')
 # line_S, = ax.plot([], [], color='purple', label='S')
 
-# ax.set_xlim(0, 70)
+# ax.set_xlim(0, 40)
 # ax.set_ylim(S.zt[-1], S.zt[0])  # surface at top
 # ax.set_xlabel('Salinity [psu]')
 # ax.set_ylabel('Depth [m]')
@@ -396,8 +403,8 @@ S_s = S.sal_s
 # anim = FuncAnimation(fig, update, frames=T_s.shape[0],
 #                      init_func=init, blit=False, interval=200)
 
-# anim.save(f'Gapar/Gaspar_findequilibrium_gamma{S.gamma}.gif')
-#plt.show()
+# anim.save(f'data/Gaspar/tke/Gaspar_noconvadj_gamma{S.gamma}.gif')
+# plt.show()
 
 ####PLOT EQUILIBRIUM PROFILES ##############################
 ###############################IN DT STANDARDS##########################
@@ -414,19 +421,37 @@ S_s = S.sal_s
 #     print("No equilibrium found, so no equilibrium profiles to plot.")
 #     exit()
 # plt.figure()
-# plt.plot((S.temp - 15)/5, S.zt/4000, label='T equilibrium')
-# plt.plot((S.sal-35)*7.6/5, S.zt/4000, label='S equilibrium')
+# pressure = gsw.p_from_z(S.zt, lat=57)
+# plt.plot(S.b_T*(1+S.g_2*pressure)*(S.temp - S.T0nl), S.zt/4000, label='T contribution')
+# plt.plot(S.b_S*(S.sal - S.S0nl), S.zt/4000, label='S contribution')
+# plt.plot((S.b_T2/2)*(S.temp - S.T0nl)**2, S.zt/4000, label='T2 contribution')
+# plt.plot((-S.b_T*(1+S.g_2*pressure)*(S.temp - S.T0nl) - (S.b_T2/2)*(S.temp - S.T0nl)**2 + S.b_S*(S.sal - S.S0nl)), S.zt/4000, label='rho nondimensional')
 # plt.xlabel = "Value at equilibrium"
 # plt.ylabel = "Depth"
 # plt.title(f"Equilibrium profiles, gamma = {S.gamma}")
 # plt.ylim(-1,0)
-# plt.xlim(-max(abs(S.sal)),max(abs(S.sal)))
 # plt.legend()
-# plt.savefig(f"Gaspar/Gaspar_equilibrium_profiles_gamma{S.gamma}.png")
-
+# #plt.savefig(f"Gaspar/Gaspar_equilibrium_profiles_gamma{S.gamma}.png")
+# plt.show()
 
 # # print('S.nt, S.lsave, nsave, S.time[:5] =', S.nt, S.lsave, S.nsave, getattr(S,'time',None)[:5])
 
 
 
+
+##### CHECK TKE EVOLUTION ##############
+
+# plt.figure()
+# plt.plot(S.Ttke_bpr, label='Buoyancy prod')
+# plt.plot(S.Ttke_dis, label='Dissipation')
+# plt.plot(S.Ttke_vdf, label='Vertical diffusion')
+# plt.plot(S.Ttke_tot, '--', label='Total')
+# plt.axhline(0, color='k', linewidth=0.5)
+
+# plt.xlabel('Saved timestep')
+# plt.ylabel('Vertically integrated TKE tendency')
+# plt.legend()
+# plt.title('TKE budget')
+# plt.tight_layout()
+# plt.savefig(f"data/Gaspar/Gaspar_TKE_budget_gamma{S.gamma}_no_convadj.png")
 

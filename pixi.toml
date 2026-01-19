@@ -1,6 +1,6 @@
 [workspace]
 channels = ["conda-forge"]
-name = "shitty_project"
+name = "conv_parametrization"
 platforms = ["osx-arm64"]
 version = "0.1.0"
 

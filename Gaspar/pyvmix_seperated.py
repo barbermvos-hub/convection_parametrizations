@@ -47,6 +47,9 @@ class Model(object):
         # Physical constants
         # ------------------
         S.grav = 9.81
+        #CHANGED TO STUDY EOS EFFECTS
+        # S.tAlpha = 1e-4
+        # S.T0=15.
         S.tAlpha = 2e-4
         S.T0 = 20.
         S.rho0 = 1024.
@@ -103,6 +106,8 @@ class Model(object):
         S.zt = 0.5*(S.zu[1:]+S.zu[:-1])
         S.dzt = np.concatenate(([-S.zt[0]],S.zt[:-1]-S.zt[1:],[-S.zu[-1]+S.zt[-1]]))
         
+        S.pressure = gsw.p_from_z(S.zt, lat=57) * 1e4  # pressure at zt in Pa
+
         # Allocate initial variables
         # --------------------------
         S.uvel = np.zeros((S.nz))
@@ -242,7 +247,7 @@ class Model(object):
           sal_old  = 1.*sal
 
           #EQUATION OF STATE (LINEAR)
-          #b_eos = S.grav*( S.tAlpha*(temp - S.T0) - S.sAlpha*(sal - S.S0) )
+          b_eos = S.grav*( S.tAlpha*(temp - S.T0) - S.sAlpha*(sal - S.S0) )
           
           #EQUATION OF STATE (FULL)
           # pressure = gsw.p_from_z(zt, lat=57)  # pressure at zt in dbar
@@ -252,9 +257,9 @@ class Model(object):
           # b_eos = -S.grav*(rho - S.rho0)/S.rho0
 
           # NONLINEAR EQUATION OF STATE (QUADRATIC APPROXIMATION)
-          pressure = gsw.p_from_z(zt, lat=57) * 1e4  # pressure at zt in Pa
-          rho = S.rho0nl * (1 - S.b_T*(1+S.g_2*pressure)*(temp - S.T0nl) - (S.b_T2/2)*(temp - S.T0nl)**2 + S.b_S*(sal - S.S0nl))
-          b_eos = -S.grav*(rho - S.rho0nl)/S.rho0nl
+          ###pressure = gsw.p_from_z(zt, lat=57) * 1e4  # pressure at zt in Pa
+          # rho = S.rho0nl * (1 - S.b_T*(1+S.g_2*S.pressure)*(temp - S.T0nl) - (S.b_T2/2)*(temp - S.T0nl)**2 + S.b_S*(sal - S.S0nl))
+          # b_eos = -S.grav*(rho - S.rho0nl)/S.rho0nl
           b_eos_old = 1.*b_eos
 
           # vert derivatives
@@ -567,16 +572,17 @@ class Model(object):
           S.sal = sal
 
           #LINEAR EQUATION OF STATE
-          #b = S.grav*( S.tAlpha*(temp - S.T0) - S.sAlpha*(sal - S.S0) )
+          b = S.grav*( S.tAlpha*(temp - S.T0) - S.sAlpha*(sal - S.S0) )
+          
           #FULL EQUATION OF STATE
           # SA = gsw.SA_from_SP(sal, pressure, lon=-50, lat=57)  # Absolute Salinity
           # CT = gsw.CT_from_t(SA, temp, pressure)  # Conservative Temperature
           # rho = gsw.rho(SA, CT, pressure) 
           # b = -S.grav*(rho - S.rho0)/S.rho0
+          
           #NONLINEAR EQUATION OF STATE (QUADRATIC APPROXIMATION)
-          pressure = gsw.p_from_z(zt, lat=57) * 1e4  # pressure at zt in Pa
-          rho = S.rho0nl * (1 - S.b_T*(1+S.g_2*pressure)*(temp - S.T0nl) - (S.b_T2/2)*(temp - S.T0nl)**2 + S.b_S*(sal - S.S0nl))
-          b = -S.grav*(rho - S.rho0nl)/S.rho0nl
+          # rho = S.rho0nl * (1 - S.b_T*(1+S.g_2*S.pressure)*(temp - S.T0nl) - (S.b_T2/2)*(temp - S.T0nl)**2 + S.b_S*(sal - S.S0nl))
+          # b = -S.grav*(rho - S.rho0nl)/S.rho0nl
 
           S.b = b
         
