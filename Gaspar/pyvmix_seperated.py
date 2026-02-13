@@ -483,6 +483,8 @@ class Model(object):
 
           TT_res = S.lam_T*(S.temp0-temp)
           TS_res = S.sal0 #NOT RESTORING BUT FLUX
+          if S.sal_relaxation:
+            TS_res = S.lam_S*(S.sal0-sal)
           
           #flux = kv*N2
           #Tb_vdf = (flux[:-1]-flux[1:])/dz

@@ -7,7 +7,7 @@ from scipy.optimize import curve_fit
 # import sys
 # import xarray as xr
 
-import pyvmix_seperated as pyvmix
+import pyvmix_seperated_forcing as pyvmix
 import gsw
 
 
@@ -40,9 +40,10 @@ S.kvAv = 'tke'
 # S.lsave = 3600//S.deltaT
 
 S.deltaT = 50*3600*24
-#S.nt = 15*365*24*3600//S.deltaT
-S.nt = 1500000*365*24*3600//S.deltaT
-S.lsave = 50*3600*24//S.deltaT
+S.nt = 30000*365*24*3600//S.deltaT
+#S.nt = 1500000*365*24*3600//S.deltaT
+#S.lsave = 50*3600*24//S.deltaT
+S.lsave = 5000*3600*24//S.deltaT
 
 S.gamma = -0.0
 S.fwf = S.gamma * (5/7.6) / (3600*24*365*5) # 25/38, then gamma should be similar to Den Toom; made per time step by scaling by delta T / 5 years.
@@ -103,6 +104,13 @@ S.temp = T_relax
 S_init = 35.0 * np.ones(S.nz)
 S.sal = S_init
 
+S.sal_relaxation = True
+S.lam_S = 1./(3600*24*365*5)
+if S.sal_relaxation:
+   S.sal0 = S_init + S.gamma * np.cos(np.pi*S.zt/(S.nz*S.dz[1]))
+   S.sal = S_init + S.gamma * np.cos(np.pi*S.zt/(S.nz*S.dz[1]))
+
+
 #S.ylim_hov = [-25, 0]
 
 # def wind_forcing(S, time):
@@ -148,24 +156,32 @@ S.eq_tol = 1e-6
 # -------------
 
 
-S.run_model()
+#S.run_model()
 
-
+#save equilibrium data 
+# np.savez(
+#     "data/Gaspar/forcing/bifurcation_equilibria_gamma-0.2.npz",
+#     gamma=np.array(S.gamma),
+#     temp=np.array(S.temp),
+#     sal=np.array(S.sal),
+#     convection=np.array(S.measure_convection),
+#     zt=S.zt
+# )
 
 ### TO MAKE BIFURCATION DIAGRAM ################################################
 ################################################################################
 
 # #reload previous data to start from there
-# data = np.load("data/Gaspar/nz10nleos/bifurcation_equilibria_data_part5.npz")
+data = np.load("data/Gaspar/sal_relax/bifurcation_equilibria_data.npz")
 
-# S.gamma = data["gamma"][-1]
-# S.temp  = data["temp"][-1,:]
-# S.sal   = data["sal"][-1,:]
-# S.measure_convection = data["convection"][-1]
+S.gamma = data["gamma"][99]
+S.temp  = data["temp"][99,:]
+S.sal   = data["sal"][99,:]
+S.measure_convection = data["convection"][99]
 
 
-number_of_steps = 100
-dgamma = -0.01
+number_of_steps = 99
+dgamma = 0.05 
 gamma_values = []
 convection_measures = []
 gamma_values.append(S.gamma)
@@ -178,9 +194,14 @@ for i in range(number_of_steps):
     S.found_solution = False
     S.gamma = S.gamma + dgamma
     gamma_values.append(S.gamma)
-    S.fwf = S.gamma * (5/7.6) / (3600*24*365*5) # 25/38, then gamma should be similar to Den Toom; made per time step by scaling by delta T / 5 years.
-    S.S_forcing = S.fwf*np.cos(np.pi*S.zt/(S.nz*S.dz[1]))
-    S.sal0 = S.S_forcing
+    
+    ## salinity flux
+    # S.fwf = S.gamma * (5/7.6) / (3600*24*365*5) # 25/38, then gamma should be similar to Den Toom; made per time step by scaling by delta T / 5 years.
+    # S.S_forcing = S.fwf*np.cos(np.pi*S.zt/(S.nz*S.dz[1]))
+    # S.sal0 = S.S_forcing
+
+    #salinity relaxation
+    S.sal0 = S_init + S.gamma * np.cos(np.pi*S.zt/(S.nz*S.dz[1]))
     S.run_model()
     convection_measures.append(S.measure_convection)
     print("hi")
@@ -208,15 +229,18 @@ for i in range(number_of_steps):
     plt.ylim(-1,0)
     #plt.xlim(-max(abs(S.sal-35)*7.6/5),max(abs(S.sal-35)*7.6/5))
     plt.legend()
-    plt.savefig(f"data/Gaspar/nz10/Gaspar_equilibrium_profiles_gamma{round(S.gamma, 2)}.png")
+    plt.savefig(f"data/Gaspar/sal_relax/back1/Gaspar_equilibrium_profiles_gamma{round(S.gamma, 2)}.png")
     print("plotted")
 
 plt.figure()
 plt.plot(gamma_values, convection_measures)
-plt.savefig('data/Gaspar/nz10/bif_Gaspar.png', dpi=200)
+
+for i in range(len(gamma_values)):
+    print(f'i={i}, gamma = {gamma_values[i]:.3f}, convection measure = {convection_measures[i]:.6f}')
+plt.savefig('data/Gaspar/sal_relax/back1/bif_Gaspar.png', dpi=200)
 
 np.savez(
-    "data/Gaspar/nz10/bifurcation_equilibria_data.npz",
+    "data/Gaspar/sal_relax/bifurcation_equilibria_data_back1.npz",
     gamma=np.array(gamma_values),
     temp=np.array(temp_eq),
     sal=np.array(sal_eq),
@@ -341,7 +365,7 @@ S_s = S.sal_s
 
 # print(f"MLD fit: a1 = {a_mld}")
 
-
+# plt.close()
 # # Optional: calculate time array for snapshots
 # time_save = np.arange(T_s.shape[0]) * S.deltaT * S.lsave / 3600  # in hours
 
@@ -439,10 +463,12 @@ S_s = S.sal_s
 
 
 
-##### CHECK TKE EVOLUTION ##############
+# #### CHECK TKE EVOLUTION ##############
+# plt.close()
 
 # plt.figure()
 # plt.plot(S.Ttke_bpr, label='Buoyancy prod')
+# plt.plot(S.Ttke_spr, label='Shear prod')
 # plt.plot(S.Ttke_dis, label='Dissipation')
 # plt.plot(S.Ttke_vdf, label='Vertical diffusion')
 # plt.plot(S.Ttke_tot, '--', label='Total')
@@ -453,5 +479,32 @@ S_s = S.sal_s
 # plt.legend()
 # plt.title('TKE budget')
 # plt.tight_layout()
-# plt.savefig(f"data/Gaspar/Gaspar_TKE_budget_gamma{S.gamma}_no_convadj.png")
+# plt.savefig(f"data/Gaspar/tke/Gaspar_TKE_budget_gamma{S.gamma}_no_convadj.png")
+
+
+# def plot_time_depth(field, title, ylabel='Vertical level', cmap='viridis',
+#                     fname=None, vmin=None, vmax=None):
+#     plt.figure()
+#     plt.pcolormesh(field.T, shading='auto', cmap=cmap,
+#                    vmin=vmin, vmax=vmax)
+#     plt.gca().invert_yaxis()
+#     plt.colorbar(label=title)
+#     plt.xlabel('Saved timestep')
+#     plt.ylabel(ylabel)
+#     plt.title(title)
+#     plt.tight_layout()
+#     plt.legend(loc='upper right') 
+#     if fname is not None:
+#         plt.savefig(fname)
+#     plt.show()
+
+# plot_time_depth(S.tke_s, 'TKE', ylabel='Depth level',
+#                 fname=f"data/Gaspar/tke/Gaspar_TKE_evolution_gamma{S.gamma}_no_convadj.png")
+# plot_time_depth(S.kv_s, 'Vertical diffusivity kv [m2/s]', ylabel='Depth level',
+#                 fname=f"data/Gaspar/tke/Gaspar_kv_evolution_gamma{S.gamma}_no_convadj.png")
+# plot_time_depth(S.b_s, 'buoyancy', ylabel='Depth level', 
+#                 fname=f"data/Gaspar/tke/Gaspar_buoyancy_evolution_gamma{S.gamma}_no_convadj.png") 
+# plot_time_depth(S.Lmix_s, 'Mixing length Lmix [m]', ylabel='Depth level',
+#                 fname=f"data/Gaspar/tke/Gaspar_Lmix_evolution_gamma{S.gamma}_no_convadj.png") 
+# plot_time_depth(S.N2_s, 'N^2', ylabel='Depth level', fname=f"data/Gaspar/tke/Gaspar_N2_evolution_gamma{S.gamma}_no_convadj.png")
 
